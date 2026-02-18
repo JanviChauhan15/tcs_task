@@ -2,7 +2,7 @@ venv/
 __pycache__/
 *.pyc
 .DS_Store
-.env
+
 data/chroma_db/
 data/database.sqlite
 data/policies/

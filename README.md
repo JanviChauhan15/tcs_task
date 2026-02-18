@@ -101,14 +101,8 @@ pip install -r requirements.txt
 ```
 
 ### 4. Configure API Keys
-**No Setup Required:** Use the API key provided below. You do not need to create a Groq account.
+**Pre-Configured:** The `.env` file is included in this repository with a valid API key for testing. You do not need to do anything.
 
-1.  Create a file named `.env` in the project folder.
-2.  Copy and paste exactly this line into the file:
-
-GROQ_API_KEY=gsk_... [Key Removed by GitHub Security - Please Request from Author]
-
-*(Note: GitHub blocks uploads containing API keys for your safety.)*
 
 ### 5. Initialize the Database
 Before running the app, we need to create the database and add some dummy data to test with.
