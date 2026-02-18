@@ -94,10 +94,16 @@ source venv/bin/activate
 ```
 
 ### 3. Install Dependencies
-Install all the required Python libraries content in `requirements.txt`:
+Install all the required Python libraries (including Streamlit) listed in `requirements.txt`:
 
 ```bash
 pip install -r requirements.txt
+```
+
+**Troubleshooting:**
+If you get an error saying `streamlit: command not found` later, try installing it manually:
+```bash
+pip install streamlit
 ```
 
 ### 4. Configure API Keys
