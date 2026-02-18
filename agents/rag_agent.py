@@ -48,15 +48,11 @@ def query_policies(query: str) -> str:
         # We return the raw context to the LLM, but we append a strict instruction
         # This is because the tool output goes back to the graph/LLM to generate the final answer.
         return f"""
-STRICT INSTRUCTION: Answer the user's question '{query}' ONLY using the following context. 
-If the answer is not in the context, state "I cannot find information about {query} in the policy documents."
-Do not make up information.
-
-CONTEXT:
+Context:
 {context_str}
 
-METADATA_SOURCES: {", ".join(list(set(source_list)))}
-DEBUG_INFO: {debug_info}
+Debug: {str(debug_info)}
+Sources: {", ".join(list(set(source_list)))}
 """
         
     except Exception as e:

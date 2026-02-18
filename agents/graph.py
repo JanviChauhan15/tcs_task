@@ -51,21 +51,6 @@ def should_call_tools(state: AgentState) -> str:
     if not (hasattr(last_message, "tool_calls") and last_message.tool_calls):
         return "end"
         
-    # 2. Check for redundant tool calls (Loop Prevention)
-    # We look at previous ToolMessages to see if we already executed this tool.
-    proposed_tools = [tc["name"] for tc in last_message.tool_calls]
-    
-    messages = state["messages"]
-    # Scan backwards
-    for msg in reversed(messages[:-1]): 
-        if isinstance(msg, SystemMessage):
-            continue
-        if hasattr(msg, "name") and msg.name in proposed_tools:
-            # We found a previous execution of this tool.
-            # Stop the loop. We assume the agent is confused or trying to retry endlessly.
-            # We return "end" so the agent just stops with whatever response it has.
-            return "end"
-            
     return "tools"
 
 def get_graph():

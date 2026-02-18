@@ -48,33 +48,47 @@ st.markdown("""
         margin-bottom: 2rem;
     }
     
-    /* CUSTOM CHAT STYLING */
+    /* CUSTOM CHAT STYLING - HIGH CONTRAST */
     /* User Message */
     .user-message {
-        background-color: #f3f4f6;
-        color: #1f2937;
+        background-color: #E5E7EB; /* Darker gray for better contrast against white page */
+        color: #000000;            /* Pure black text */
         padding: 1rem 1.25rem;
         border-radius: 1.5rem 1.5rem 0 1.5rem;
-        margin-bottom: 0.5rem;
-        border: 1px solid #e5e7eb;
+        margin-bottom: 0.75rem;
+        border: 2px solid #D1D5DB; /* Stronger border */
         display: inline-block;
-        /* float: right; This breaks standard flow usually, but we'll try alignment */
+        font-weight: 600;          /* Semi-bold for user questions */
+        font-size: 1rem;
     }
     
     /* Bot Message */
     .bot-message {
-        background-color: #ffffff;
-        color: #111827;
+        background-color: #FFFFFF;
+        color: #000000;            /* Pure black text */
         padding: 1rem 1.25rem;
         border-radius: 1.5rem 1.5rem 1.5rem 0;
-        margin-bottom: 0.5rem;
-        border: 1px solid #e5e7eb;
-        border-left: 5px solid #6366f1; /* Indigo Accent */
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        margin-bottom: 0.75rem;
+        border: 1px solid #D1D5DB;
+        border-left: 6px solid #4F46E5; /* Indigo Accent - High Contrast */
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+        font-size: 1rem;
+        line-height: 1.6;          /* Better readability */
     }
     
     /* Remove default streamlit container padding for cleaner look if needed */
     /* .stChatMessage { padding: 0.5rem; } */
+    
+    /* SIDEBAR BUTTON IMPROVEMENTS */
+    .stButton button {
+        white-space: nowrap;
+        width: 100%; /* Force full width logic just in case */
+    }
+    
+    /* Vertical spacing for stacked buttons */
+    .stButton {
+        margin-bottom: 0.5rem !important; /* 8px grid */
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -138,16 +152,7 @@ with st.sidebar:
                 time.sleep(1)
                 st.rerun()
 
-        st.divider()
 
-        # 2. Global Actions
-        if st.button("Re-index ALL Documents", key="reindex_all_btn", use_container_width=True, type="secondary"):
-            with st.spinner("Resetting & Indexing All..."):
-                from services.policy_engine import policy_engine
-                res = policy_engine.reset_all()
-            st.success("Re-indexing Complete!")
-            time.sleep(1)
-            st.rerun()
 
         st.divider()
         st.caption("Indexed Documents:")
@@ -171,16 +176,15 @@ with st.sidebar:
                     st.markdown(f"**{lucide_icon('file-text', 'xs')} {filename}**", unsafe_allow_html=True)
                     st.caption(f"Chunks: {doc.get('chunk_count')} | Pages: {doc.get('page_count', '?')}")
                     
-                    # Row of mini buttons
-                    b1, b2 = st.columns(2)
-                    if b1.button("Re-index", key=f"re_{doc_id}", use_container_width=True):
+                    # Vertical Chain of Actions
+                    if st.button("Re-index", key=f"re_{doc_id}", use_container_width=True):
                         with st.spinner("Re-indexing..."):
                             policy_engine.index_file(filename)
                         st.toast("Updated!", icon="🔄")
                         time.sleep(0.5)
                         st.rerun()
                         
-                    if b2.button("Remove", key=f"del_{doc_id}", use_container_width=True):
+                    if st.button("Remove", key=f"del_{doc_id}", use_container_width=True):
                         with st.spinner("Deleting..."):
                             policy_engine.delete_file(filename)
                         st.toast("Deleted!", icon="🗑️")
@@ -245,7 +249,14 @@ if st.session_state.messages and isinstance(st.session_state.messages[-1], Human
         with st.spinner("Thinking..."):
             try:
                 # Inputs for the graph
-                system_prompt = SystemMessage(content="You are a helpful customer support supervisor. When a tool returns an answer, you MUST repeat that answer to the user clearly.")
+                system_prompt = SystemMessage(content="""You are a helpful customer support supervisor. 
+                
+RULES:
+1. SQL DATA: When a tool returns data (like SQL rows), you must explain it in simple, natural language. DO NOT output raw JSON.
+2. POLICIES: When a tool returns policy context, answer the user's question using ONLY that context. 
+3. CITATIONS: You must include inline citations for policy answers. Format: [Source: Filename, Page X].
+4. UNKNOWN: If the policy context doesn't contain the answer, say "I couldn't find that info in the documents."
+""")
                 messages_in = [system_prompt] + st.session_state.messages
                 
                 # Check initial length to identify new messages
@@ -273,7 +284,8 @@ if st.session_state.messages and isinstance(st.session_state.messages[-1], Human
                 # This ensures we don't pick up tool outputs from previous turns.
                 for i in range(len(st.session_state.messages)-1, initial_len-1, -1):
                      msg = st.session_state.messages[i]
-                     if isinstance(msg, ToolMessage) and msg.name == "query_sql_db":
+                     # Check for RAG tool or SQL tool
+                     if isinstance(msg, ToolMessage):
                          tool_data = msg.content
                          break
                 
@@ -289,18 +301,40 @@ if st.session_state.messages and isinstance(st.session_state.messages[-1], Human
                 sources_found = []
                 retrieval_debug = "No retrieval performed."
                 
-                if tool_data and "METADATA_SOURCES:" in tool_data:
-                    try:
-                        # Simple parsing from the string we injected in rag_agent.py
-                        parts = tool_data.split("METADATA_SOURCES:")[1].split("DEBUG_INFO:")[0].strip()
-                        if parts:
-                             sources_found = [s.strip() for s in parts.split(",")]
-                             
-                        # Extract Debug Info
-                        if "DEBUG_INFO:" in tool_data:
-                             retrieval_debug = tool_data.split("DEBUG_INFO:")[1].strip()
-                    except:
-                        pass
+                if tool_data:
+                    # RAG Parsing
+                    if "Sources:" in tool_data:
+                        try:
+                            # Split by "Sources:" and take the part before "Debug:" or end
+                            # New format: Context... \nDebug: ... \nSources: ...
+                            # Wait, I put Sources at the end in rag_agent.py.
+                            # Let's handle generic key-value parsing or regex? 
+                            # Simple split works if format is consistent.
+                            pass # logic below
+                            
+                            if "Sources:" in tool_data:
+                                 parts = tool_data.split("Sources:")[1].strip()
+                                 if parts:
+                                     sources_found = [s.strip() for s in parts.split(",")]
+                        except:
+                            pass
+                    
+                    if "Debug:" in tool_data:
+                         try:
+                             # It might be in the middle or end
+                             # Format in rag_agent: "... Debug: {...} \nSources: ..."
+                             # So splitting by Debug: gets the rest.
+                             # Then split by Sources to isolate debug info? 
+                             # Let's be loose.
+                             debug_part = tool_data.split("Debug:")[1]
+                             if "Sources:" in debug_part:
+                                 retrieval_debug = debug_part.split("Sources:")[0].strip()
+                             else:
+                                 retrieval_debug = debug_part.strip()
+                         except:
+                             pass
+                    elif "DEBUG_INFO:" in tool_data: # Backup for older format or SQL?
+                         pass
                 
                 # Render Sources cleanly below the bubble
                 if sources_found:
@@ -312,7 +346,8 @@ if st.session_state.messages and isinstance(st.session_state.messages[-1], Human
                     st.caption(f"**Retrieval Stats:** {retrieval_debug}")
                     st.caption("Agent execution trace:")
                     if tool_data:
-                        st.code(tool_data, language="text")
+                        # If it's a list of dicts string representation, code block is good
+                        st.code(tool_data, language="json" if tool_data.startswith("{") else "text")
                     else:
                         st.info("No tool calls in this turn.")
                     
