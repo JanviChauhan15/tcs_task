@@ -23,12 +23,12 @@ The system follows a **Multi-Agent Architecture** using **LangGraph**:
 
 ```mermaid
 graph TD
-    User[User Query] --> Graph[Supervisor Agent (Groq Llama-3)]
-    Graph -->|Policy Q| RAG[RAG Agent]
-    Graph -->|Data Q| SQL[SQL Agent]
+    User["User Query"] --> Graph["Supervisor Agent (Groq Llama-3)"]
+    Graph -->|Policy Q| RAG["RAG Agent"]
+    Graph -->|Data Q| SQL["SQL Agent"]
     RAG -->|Context| Graph
     SQL -->|Rows| Graph
-    Graph -->|Final Answer| UI[Streamlit UI]
+    Graph -->|Final Answer| UI["Streamlit UI"]
 ```
 
 1.  **Streamlit UI**: The frontend interface for chat and specific admin actions (uploading docs, resetting DB).
