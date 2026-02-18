@@ -1,58 +1,91 @@
 import os
-from dotenv import load_dotenv
-from typing import Annotated, TypedDict, Union, Literal
-from langchain_openai import ChatOpenAI
-from langchain.tools import Tool
-from langgraph.graph import StateGraph, END
-from langchain_core.messages import BaseMessage, HumanMessage
+from typing import TypedDict, List, Any, Dict, Annotated
 import operator
+from dotenv import load_dotenv
 
-# Import our agents
-from agents.sql_agent import get_sql_agent
-from agents.rag_agent import get_rag_chain
+from langchain_groq import ChatGroq
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langgraph.graph import StateGraph, END
+from langgraph.prebuilt import ToolNode
+
+# Import our tools
+from agents.utils_sql import query_sql_db, get_customer_profile
+from agents.rag_agent import query_policies
 
 load_dotenv()
 
-# Define tools for the supervisor to call
-def query_sql_db(query: str):
-    """
-    Useful for querying customer data, tickets, and structured information from the database.
-    Input should be a natural language question.
-    """
-    agent = get_sql_agent()
-    result = agent.invoke({"input": query})
-    return result['output']
+# 1) Groq LLM (Pure Groq)
+llm = ChatGroq(
+    model="llama-3.1-8b-instant",
+    temperature=0
+)
 
-def query_policies(query: str):
+# 2) Tools
+# query_policies is already a @tool, so we don't need to call it like a factory
+tools = [query_sql_db, get_customer_profile, query_policies]
+
+# 3) Bind tools to Groq model
+llm_with_tools = llm.bind_tools(tools)
+
+class AgentState(TypedDict):
+    messages: Annotated[List[BaseMessage], operator.add]
+
+def assistant_node(state: AgentState) -> Dict:
     """
-    Useful for querying company policies, refund rules, and other document-based information.
-    Input should be a natural language question.
+    The model decides whether to answer directly or call tools.
     """
-    chain = get_rag_chain()
-    result = chain.invoke({"input": query})
-    return result['answer']
+    # Simply invoke the model with tools bound
+    response = llm_with_tools.invoke(state["messages"])
+    return {"messages": [response]}
 
-tools = [
-    Tool(
-        name="CustomerDB",
-        func=query_sql_db,
-        description="Useful for querying customer data and support tickets."
-    ),
-    Tool(
-        name="PolicyDocs",
-        func=query_policies,
-        description="Useful for querying company policies and documents."
-    )
-]
+tool_node = ToolNode(tools)
 
-# Using a simpler ReAct style agent since we want a supervisor to route
-# Or we can just use the tools directly with an agent.
-# Let's create a graph with a single node that calls the LLM with tools bound, 
-# and then executes the tool.
-
-from langgraph.prebuilt import create_react_agent
+def should_call_tools(state: AgentState) -> str:
+    """
+    If the model returned tool_calls, route to tool node. 
+    Prevents infinite loops by checking if the tool was already called.
+    """
+    last_message = state["messages"][-1]
+    
+    # 1. No tool calls? End.
+    if not (hasattr(last_message, "tool_calls") and last_message.tool_calls):
+        return "end"
+        
+    # 2. Check for redundant tool calls (Loop Prevention)
+    # We look at previous ToolMessages to see if we already executed this tool.
+    proposed_tools = [tc["name"] for tc in last_message.tool_calls]
+    
+    messages = state["messages"]
+    # Scan backwards
+    for msg in reversed(messages[:-1]): 
+        if isinstance(msg, SystemMessage):
+            continue
+        if hasattr(msg, "name") and msg.name in proposed_tools:
+            # We found a previous execution of this tool.
+            # Stop the loop. We assume the agent is confused or trying to retry endlessly.
+            # We return "end" so the agent just stops with whatever response it has.
+            return "end"
+            
+    return "tools"
 
 def get_graph():
-    llm = ChatOpenAI(model="gpt-4o", temperature=0)
-    graph = create_react_agent(llm, tools=tools)
-    return graph
+    graph = StateGraph(AgentState)
+    graph.add_node("assistant", assistant_node)
+    graph.add_node("tools", tool_node)
+
+    graph.set_entry_point("assistant")
+    
+    # Conditional routing
+    graph.add_conditional_edges(
+        "assistant", 
+        should_call_tools, 
+        {
+            "tools": "tools",
+            "end": END
+        }
+    )
+    
+    # Loop back from tools to assistant
+    graph.add_edge("tools", "assistant")
+
+    return graph.compile()

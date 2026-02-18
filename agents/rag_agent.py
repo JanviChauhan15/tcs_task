@@ -1,53 +1,63 @@
 from langchain_chroma import Chroma
-from langchain_openai import OpenAIEmbeddings, ChatOpenAI
-from langchain.chains import create_retrieval_chain
-from langchain.chains.combine_documents import create_stuff_documents_chain
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain.tools.retriever import create_retriever_tool
 from dotenv import load_dotenv
+import os
 
 load_dotenv()
 
 CHROMA_PATH = "data/chroma_db"
 
-def get_rag_chain():
-    embeddings = OpenAIEmbeddings()
-    vectorstore = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
-    retriever = vectorstore.as_retriever()
-    
-    llm = ChatOpenAI(model="gpt-4o", temperature=0)
-    
-    system_prompt = (
-        "You are an assistant for question-answering tasks. "
-        "Use the following pieces of retrieved context to answer "
-        "the question. If you don't know the answer, say that you "
-        "don't know. Use three sentences maximum and keep the "
-        "answer concise."
-        "\n\n"
-        "{context}"
-    )
-    
-    prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", system_prompt),
-            ("human", "{input}"),
-        ]
-    )
-    
-    question_answer_chain = create_stuff_documents_chain(llm, prompt)
-    rag_chain = create_retrieval_chain(retriever, question_answer_chain)
-    
-    return rag_chain
+from langchain_core.tools import tool
 
-def get_rag_tool():
-    # Wrap the RAG functionality as a tool for the supervisor or usage
-    embeddings = OpenAIEmbeddings()
-    vectorstore = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
-    retriever = vectorstore.as_retriever()
-    
-    tool = create_retriever_tool(
-        retriever,
-        "policy_search",
-        "Search for information about company policies, refunds, and other document-related questions."
-    )
-    return tool
+@tool
+def query_policies(query: str) -> str:
+    """
+    Search for information about company policies, refunds, shipping, and other document-related questions.
+    Returns the relevant text chunks and their source documents.
+    """
+    try:
+        # Re-initialize internally to ensure we get fresh state if needed
+        embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+        vectorstore = Chroma(persist_directory=CHROMA_PATH, embedding_function=embeddings)
+        
+        # Retrieve top 4 results (increased from 3 for better coverage)
+        results = vectorstore.similarity_search(query, k=4)
+        
+        debug_info = {
+            "query": query,
+            "retrieved_count": len(results),
+            "top_source": results[0].metadata.get("source", "N/A") if results else "None"
+        }
+
+        if not results:
+             return f"No relevant policy information found in indexed documents about '{query}'. (Debug: 0 chunks found)"
+        
+        # Format output for the LLM
+        formatted_results = []
+        source_list = []
+        for i, doc in enumerate(results):
+            source = doc.metadata.get("doc_name", os.path.basename(doc.metadata.get("source", "Unknown")))
+            page = doc.metadata.get("page", "N/A")
+            content = doc.page_content.replace("\n", " ")
+            formatted_results.append(f"Source {i+1}: {source} (Page {page})\nContent: {content}\n")
+            source_list.append(f"{source} (p. {page})")
+            
+        context_str = "\n".join(formatted_results)
+        
+        # We return the raw context to the LLM, but we append a strict instruction
+        # This is because the tool output goes back to the graph/LLM to generate the final answer.
+        return f"""
+STRICT INSTRUCTION: Answer the user's question '{query}' ONLY using the following context. 
+If the answer is not in the context, state "I cannot find information about {query} in the policy documents."
+Do not make up information.
+
+CONTEXT:
+{context_str}
+
+METADATA_SOURCES: {", ".join(list(set(source_list)))}
+DEBUG_INFO: {debug_info}
+"""
+        
+    except Exception as e:
+        return f"Error querying policies: {str(e)}"
