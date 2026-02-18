@@ -167,3 +167,10 @@ Here is how the code is organized:
 ├── requirements.txt      # List of all Python libraries used
 └── .env                  # Your secret API keys (hidden)
 ```
+
+
+## 🎥 Demo Video
+
+You can watch the full project walkthrough here:
+
+👉 [Watch Demo on Loom](https://www.loom.com/share/a01e89413a5b4c88b7deff5965721807)
