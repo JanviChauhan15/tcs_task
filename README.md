@@ -57,6 +57,20 @@ graph TD
 
 Follow these steps to get the project running on your local machine.
 
+### 0. Prerequisites (Install Python)
+Before anything else, you must have **Python 3.10 or higher** installed on your computer.
+
+1.  **Check if you have Python**:
+    Open your terminal or command prompt and type:
+    ```bash
+    python3 --version
+    ```
+    If it says `Python 3.10.x` or higher, you are good to go!
+
+2.  **If not installed**:
+    *   Download it from [python.org/downloads](https://www.python.org/downloads/).
+    *   **Windows Users**: Make sure to check the box **"Add Python to PATH"** during installation.
+
 ### 1. Get the Project
 First, you need to download the code from GitHub. Open your terminal and run:
 
